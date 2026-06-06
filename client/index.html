@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>📦 Live Order Updates</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2rem;
+    }
+
+    h1 { font-size: 1.6rem; font-weight: 700; }
+
+    #status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      padding: 0.4rem 1rem;
+      border-radius: 999px;
+      font-weight: 600;
+      transition: all 0.3s;
+    }
+
+    #status.connected    { background: #064e3b; color: #6ee7b7; }
+    #status.disconnected { background: #450a0a; color: #fca5a5; }
+    #status.connecting   { background: #1e3a5f; color: #93c5fd; }
+
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+
+    .card {
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+
+    .card h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Orders Table */
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+
+    th {
+      text-align: left;
+      padding: 0.6rem 0.8rem;
+      color: #64748b;
+      font-weight: 600;
+      border-bottom: 1px solid #2d3148;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    td { padding: 0.7rem 0.8rem; border-bottom: 1px solid #1e2235; }
+
+    tr:last-child td { border-bottom: none; }
+
+    tr.highlight td { animation: flashRow 1.5s ease; }
+
+    @keyframes flashRow {
+      0%   { background: #1d3a5f; }
+      100% { background: transparent; }
+    }
+
+    tr.deleted td { animation: fadeOut 0.6s ease forwards; }
+    @keyframes fadeOut {
+      to { opacity: 0; height: 0; padding: 0; }
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .badge.pending   { background: #78350f; color: #fcd34d; }
+    .badge.shipped   { background: #1e3a5f; color: #93c5fd; }
+    .badge.delivered { background: #064e3b; color: #6ee7b7; }
+
+    /* Event Log */
+    #log {
+      height: 300px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .log-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 0.6rem 0.8rem;
+      border-radius: 8px;
+      background: #0f1117;
+      font-size: 0.82rem;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-10px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .log-entry.INSERT { border-left: 3px solid #22c55e; }
+    .log-entry.UPDATE { border-left: 3px solid #3b82f6; }
+    .log-entry.DELETE { border-left: 3px solid #ef4444; }
+    .log-entry.SNAPSHOT { border-left: 3px solid #a855f7; }
+
+    .log-icon { font-size: 1rem; }
+
+    .log-body { flex: 1; }
+    .log-time { font-size: 0.7rem; color: #475569; margin-top: 2px; }
+
+    #empty-state {
+      color: #475569;
+      text-align: center;
+      padding: 2rem;
+      font-size: 0.9rem;
+    }
+
+    /* Quick test form */
+    .form-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    input, select {
+      flex: 1;
+      padding: 0.5rem 0.75rem;
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      color: #e2e8f0;
+      font-size: 0.85rem;
+      min-width: 120px;
+    }
+
+    button {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.8; }
+
+    .btn-create { background: #16a34a; color: white; }
+    .btn-update { background: #2563eb; color: white; }
+    .btn-delete { background: #dc2626; color: white; }
+
+    .form-group label {
+      display: block;
+      font-size: 0.75rem;
+      color: #64748b;
+      margin-bottom: 0.3rem;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .form-group { margin-bottom: 0.75rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📦 Live Order Updates</h1>
+  <div id="status" class="connecting">
+    <div class="dot"></div>
+    <span id="status-text">Connecting…</span>
+  </div>
+</header>
+
+<div class="grid">
+
+  <!-- Left: Orders Table -->
+  <div class="card">
+    <h2>Orders</h2>
+    <table id="orders-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Customer</th>
+          <th>Product</th>
+          <th>Status</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody id="orders-body">
+        <tr><td colspan="5" id="empty-state">Waiting for data…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Right: Event Log -->
+  <div class="card">
+    <h2>Event Log</h2>
+    <div id="log"></div>
+  </div>
+
+</div>
+
+<!-- Quick Test Panel -->
+<div class="card" style="margin-top:1.5rem;">
+  <h2>Quick Test (no curl needed)</h2>
+  <div class="form-row">
+    <div class="form-group" style="flex:1">
+      <label>Customer Name</label>
+      <input type="text" id="customer" placeholder="e.g. Alice" />
+    </div>
+    <div class="form-group" style="flex:1">
+      <label>Product Name</label>
+      <input type="text" id="product" placeholder="e.g. Laptop" />
+    </div>
+    <div style="display:flex;align-items:flex-end;padding-bottom:0.75rem">
+      <button class="btn-create" onclick="createOrder()">➕ Create</button>
+    </div>
+  </div>
+  <div class="form-row">
+    <div class="form-group" style="flex:1">
+      <label>Order ID</label>
+      <input type="number" id="update-id" placeholder="e.g. 1" />
+    </div>
+    <div class="form-group" style="flex:1">
+      <label>New Status</label>
+      <select id="update-status">
+        <option value="pending">Pending</option>
+        <option value="shipped">Shipped</option>
+        <option value="delivered">Delivered</option>
+      </select>
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:0.5rem;padding-bottom:0.75rem">
+      <button class="btn-update" onclick="updateOrder()">✏️ Update</button>
+      <button class="btn-delete" onclick="deleteOrder()">🗑️ Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = 'http://localhost:8000/api';
+  const WS_URL = 'ws://localhost:8000/ws/orders/';
+
+  let ws;
+  const ordersMap = {};   // id → order, for O(1) updates
+
+  function connect() {
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => setStatus('connected', '✅ Connected');
+
+    ws.onclose = () => {
+      setStatus('disconnected', '❌ Disconnected — retrying in 3s…');
+      setTimeout(connect, 3000);   // auto-reconnect
+    };
+
+    ws.onerror = () => setStatus('disconnected', '❌ Connection error');
+
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+
+      if (msg.type === 'SNAPSHOT') {
+        ordersMap = {};
+        msg.orders.forEach(o => ordersMap[o.id] = o);
+        renderTable();
+        addLog('SNAPSHOT', '📸', `Snapshot — ${msg.orders.length} order(s) loaded`);
+      }
+
+      if (msg.type === 'ORDER_CHANGE') {
+        const o = msg.order;
+        const icons = { INSERT: '🆕', UPDATE: '✏️', DELETE: '🗑️' };
+        const labels = { INSERT: 'Created', UPDATE: 'Updated', DELETE: 'Deleted' };
+
+        if (msg.change_type === 'DELETE') {
+          delete ordersMap[o.id];
+          removeRow(o.id);
+          addLog('DELETE', icons.DELETE, `Order #${o.id} deleted (${o.customer_name})`);
+        } else {
+          ordersMap[o.id] = o;
+          upsertRow(o, msg.change_type);
+          addLog(msg.change_type, icons[msg.change_type],
+            `Order #${o.id} ${labels[msg.change_type].toLowerCase()} — ${o.customer_name} | ${o.product_name} | ${o.status}`);
+        }
+      }
+    };
+  }
+
+  function setStatus(cls, text) {
+    const el = document.getElementById('status');
+    el.className = cls;
+    document.getElementById('status-text').textContent = text;
+  }
+
+  // ---- Table rendering ----
+
+  function renderTable() {
+    const tbody = document.getElementById('orders-body');
+    tbody.innerHTML = '';
+    const orders = Object.values(ordersMap);
+    if (orders.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" id="empty-state">No orders yet.</td></tr>';
+      return;
+    }
+    orders.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+    orders.forEach(o => tbody.appendChild(makeRow(o)));
+  }
+
+  function makeRow(o) {
+    const tr = document.createElement('tr');
+    tr.id = `row-${o.id}`;
+    tr.innerHTML = `
+      <td>#${o.id}</td>
+      <td>${o.customer_name}</td>
+      <td>${o.product_name}</td>
+      <td><span class="badge ${o.status}">${o.status}</span></td>
+      <td>${new Date(o.updated_at).toLocaleTimeString()}</td>
+    `;
+    return tr;
+  }
+
+  function upsertRow(o, changeType) {
+    const existing = document.getElementById(`row-${o.id}`);
+    const newRow = makeRow(o);
+    if (existing) {
+      existing.replaceWith(newRow);
+    } else {
+      const tbody = document.getElementById('orders-body');
+      const empty = document.getElementById('empty-state');
+      if (empty) empty.closest('tr').remove();
+      tbody.prepend(newRow);
+    }
+    // Flash animation on insert/update
+    setTimeout(() => newRow.classList.add('highlight'), 10);
+    setTimeout(() => newRow.classList.remove('highlight'), 1600);
+  }
+
+  function removeRow(id) {
+    const row = document.getElementById(`row-${id}`);
+    if (row) {
+      row.classList.add('deleted');
+      setTimeout(() => row.remove(), 600);
+    }
+  }
+
+  // ---- Event Log ----
+
+  function addLog(type, icon, message) {
+    const log = document.getElementById('log');
+    const entry = document.createElement('div');
+    entry.className = `log-entry ${type}`;
+    const now = new Date().toLocaleTimeString();
+    entry.innerHTML = `
+      <span class="log-icon">${icon}</span>
+      <div class="log-body">
+        <div>${message}</div>
+        <div class="log-time">${now}</div>
+      </div>
+    `;
+    log.prepend(entry);
+    // Keep log to last 50 entries
+    while (log.children.length > 50) log.removeChild(log.lastChild);
+  }
+
+  // ---- Quick Test API calls ----
+
+  async function createOrder() {
+    const customer = document.getElementById('customer').value.trim();
+    const product  = document.getElementById('product').value.trim();
+    if (!customer || !product) return alert('Fill in customer and product name');
+
+    await fetch(`${API}/orders/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer_name: customer, product_name: product }),
+    });
+    document.getElementById('customer').value = '';
+    document.getElementById('product').value  = '';
+  }
+
+  async function updateOrder() {
+    const id     = document.getElementById('update-id').value.trim();
+    const status = document.getElementById('update-status').value;
+    if (!id) return alert('Enter an Order ID');
+
+    await fetch(`${API}/orders/${id}/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  async function deleteOrder() {
+    const id = document.getElementById('update-id').value.trim();
+    if (!id) return alert('Enter an Order ID');
+    if (!confirm(`Delete Order #${id}?`)) return;
+
+    await fetch(`${API}/orders/${id}/`, { method: 'DELETE' });
+  }
+
+  // Start WebSocket connection
+  connect();
+</script>
+
+</body>
+</html>
