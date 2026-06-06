@@ -112,5 +112,4 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# CORS — allow all origins so client/index.html (file://) can hit the API
 CORS_ALLOW_ALL_ORIGINS = True

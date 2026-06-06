@@ -1,7 +1,74 @@
 # 📦 Real-Time Order Updates — Django + Signals + WebSockets
 
 A backend service that pushes live order changes to all connected browser clients in real-time.  
-Built with **Django**, **Django Channels**, **Django Signals**, and **PostgreSQL**.
+Built with **Django**, **Django Channels**, **Django Signals**, **Redis**, and **PostgreSQL**.
+
+---
+
+## 🚀 Live Demo (Railway)
+
+**API Base URL:** `https://web-production-397a5.up.railway.app`  
+**WebSocket URL:** `wss://web-production-397a5.up.railway.app/ws/orders/`
+
+---
+
+## 🧪 How to Test (No Setup Required)
+
+The app is already deployed and running. You only need the browser client file.
+
+### Step 1 — Download & open the client
+
+Download [`client/index.html`](./client/index.html) from this repo and open it in your browser by double-clicking it.
+
+> The HTML file already points to the Railway deployment — no configuration needed.
+
+### Step 2 — Open it in 2 tabs
+
+Press `Ctrl+T`, open a new tab, and drag the same `index.html` file into it.  
+Both tabs should show **✅ Connected** in the top-right corner.
+
+### Step 3 — Create an order in Tab 1
+
+Fill in the form at the bottom:
+- **Customer Name** → e.g. `Alice`
+- **Product Name** → e.g. `Laptop`
+- Click **➕ Create**
+
+👉 Watch **Tab 2** — the order appears instantly **without refreshing**. That's real-time WebSocket in action!
+
+### Step 4 — Update status
+
+Enter Order ID `1`, select `Shipped` → click **✏️ Update**  
+→ Both tabs update the status badge **instantly** ✅
+
+### Step 5 — Delete
+
+Enter Order ID `1` → click **🗑️ Delete**  
+→ The row disappears in **both tabs simultaneously** ✅
+
+---
+
+## 🌐 Test with curl
+
+```bash
+BASE=https://web-production-397a5.up.railway.app
+
+# List all orders
+curl $BASE/api/orders/
+
+# Create an order
+curl -X POST $BASE/api/orders/ \
+     -H "Content-Type: application/json" \
+     -d '{"customer_name": "Alice", "product_name": "Laptop"}'
+
+# Update status
+curl -X PATCH $BASE/api/orders/1/ \
+     -H "Content-Type: application/json" \
+     -d '{"status": "shipped"}'
+
+# Delete an order
+curl -X DELETE $BASE/api/orders/1/
+```
 
 ---
 
@@ -25,7 +92,7 @@ REST API → Order.save() → Django Signal → Redis → WebSocket → Browser
 ```
 pooling_backend/
 ├── config/
-│   ├── settings.py       # Django settings (DB, Channels, ASGI)
+│   ├── settings.py       # Django settings (DB, Channels, ASGI, CORS)
 │   ├── urls.py           # Root URL config
 │   └── asgi.py           # ASGI entry point (HTTP + WebSocket routing)
 ├── orders/
@@ -38,88 +105,12 @@ pooling_backend/
 │   └── apps.py           # Connects signals on Django startup
 ├── client/
 │   └── index.html        # Browser demo (no build step needed)
-├── docker-compose.yml    # PostgreSQL + Redis
+├── Procfile              # Railway start command
+├── runtime.txt           # Python version pin for Railway
+├── docker-compose.yml    # PostgreSQL + Redis (local dev)
 ├── requirements.txt
-└── .env
+└── .env.example
 ```
-
----
-
-## Prerequisites
-
-- Python 3.12+
-- Docker Desktop (for PostgreSQL + Redis)
-
----
-
-## Setup & Run
-
-### 1. Clone and install dependencies
-
-```bash
-git clone <repo-url>
-cd pooling_backend
-
-pip install -r requirements.txt
-```
-
-### 2. Start PostgreSQL and Redis
-
-```bash
-docker-compose up -d
-```
-
-### 3. Copy and configure environment variables
-
-```bash
-copy .env.example .env
-# Edit .env if needed (default values work with docker-compose)
-```
-
-### 4. Run migrations
-
-```bash
-python manage.py migrate
-```
-
-### 5. Start the Django server (ASGI mode for WebSocket support)
-
-```bash
-daphne config.asgi:application
-```
-
-Server runs at: `http://localhost:8000`
-
----
-
-## Test It
-
-### Open the browser client
-
-Open `client/index.html` directly in your browser (no web server needed).  
-Open it in **2 or more tabs** to see live sync.
-
-### Test with curl
-
-```bash
-# Create an order
-curl -X POST http://localhost:8000/api/orders/ \
-     -H "Content-Type: application/json" \
-     -d '{"customer_name": "Alice", "product_name": "Laptop"}'
-
-# Update status
-curl -X PATCH http://localhost:8000/api/orders/1/ \
-     -H "Content-Type: application/json" \
-     -d '{"status": "shipped"}'
-
-# Delete an order
-curl -X DELETE http://localhost:8000/api/orders/1/
-
-# List all orders
-curl http://localhost:8000/api/orders/
-```
-
-Every operation instantly appears in all open browser tabs. ✅
 
 ---
 
@@ -133,23 +124,17 @@ Every operation instantly appears in all open browser tabs. ✅
 | `PATCH` | `/api/orders/<id>/` | Update status → triggers real-time update |
 | `DELETE` | `/api/orders/<id>/` | Delete order → triggers real-time update |
 
-### WebSocket
-
-| URL | Description |
-|-----|-------------|
-| `ws://localhost:8000/ws/orders/` | Subscribe to live order events |
-
 ### WebSocket Message Format
 
-**On connect** — full snapshot:
+**On connect** — full snapshot of all current orders:
 ```json
 {
   "type": "SNAPSHOT",
-  "orders": [ { "id": 1, "customer_name": "Alice", ... } ]
+  "orders": [ { "id": 1, "customer_name": "Alice", "product_name": "Laptop", "status": "pending", "updated_at": "..." } ]
 }
 ```
 
-**On change** — event:
+**On any change** — real-time event pushed to all connected clients:
 ```json
 {
   "type": "ORDER_CHANGE",
@@ -162,16 +147,77 @@ Every operation instantly appears in all open browser tabs. ✅
 
 ---
 
-## Why Django Signals?
+## Run Locally
 
-Django's `post_save` and `post_delete` signals fire automatically after every ORM write.  
-This means:
-- **No polling** — clients receive updates instantly
-- **No SQL triggers** — pure Django, no extra DB setup
-- **No daemon threads** — signals run in the same request/response cycle
-- **Easy to test** — call `post_save.send(Order, instance=..., created=True)` in tests
+### Prerequisites
 
-The signal handler uses `async_to_sync(channel_layer.group_send)` to bridge the synchronous signal context into the async Redis channel layer.
+- Python 3.12+
+- Docker Desktop (for PostgreSQL + Redis)
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/VENUGOPAL-ADUSUMALLI/ws-realtime.git
+cd ws-realtime
+
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+### 2. Set up environment variables
+
+```bash
+# Windows
+copy .env.example .env
+
+# macOS / Linux
+cp .env.example .env
+```
+
+### 3. Start PostgreSQL and Redis
+
+```bash
+docker-compose up -d
+```
+
+### 4. Run migrations and start server
+
+```bash
+python manage.py migrate
+daphne config.asgi:application
+```
+
+Server runs at: `http://localhost:8000`
+
+### 5. Open the client
+
+Open `client/index.html` in your browser.  
+Update these two lines in the file to point to `localhost`:
+
+```js
+const API    = 'http://localhost:8000/api';
+const WS_URL = 'ws://localhost:8000/ws/orders/';
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Web server | Django 5.2 + Daphne (ASGI) |
+| Real-time | Django Channels 4.1 + Django Signals |
+| Message broker | Redis (via channels-redis) |
+| Database | PostgreSQL |
+| CORS | django-cors-headers |
+| Static files | WhiteNoise |
+| Deployment | Railway |
 
 ---
 
@@ -184,3 +230,4 @@ The signal handler uses `async_to_sync(channel_layer.group_send)` to bridge the 
 | Channel fan-out | Redis Channel Layer | Decouples signal from consumers, scales horizontally |
 | Initial state | Snapshot on WS connect | Client always starts with full current data |
 | Auto-reconnect | Client retries every 3s | Resilient to server restarts |
+| CORS | django-cors-headers | Allows cross-origin browser clients |
