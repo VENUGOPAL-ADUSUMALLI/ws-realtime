@@ -11,7 +11,13 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-fallback-key')
 
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',')
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    'web-production-397a5.up.railway.app',
+    *os.getenv('ALLOWED_HOSTS', '').split(','),
+]
+ALLOWED_HOSTS = [h for h in ALLOWED_HOSTS if h]  # remove empty strings
 
 INSTALLED_APPS = [
     'django.contrib.admin',
