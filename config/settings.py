@@ -88,13 +88,6 @@ CHANNEL_LAYERS = {
             "hosts": [_redis_url],
             "capacity": 1500,
             "expiry": 60,
-            "connection_kwargs": {
-                "socket_timeout": 30,
-                "socket_connect_timeout": 10,
-                "socket_keepalive": True,
-                "retry_on_timeout": True,
-                "health_check_interval": 30,
-            },
         },
     }
 }
