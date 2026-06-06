@@ -80,11 +80,21 @@ else:
     }
 
 # Redis Channel Layer — fan-out WebSocket messages to all clients
+_redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [os.getenv('REDIS_URL', 'redis://localhost:6379')],
+            "hosts": [_redis_url],
+            "capacity": 1500,
+            "expiry": 60,
+            "connection_kwargs": {
+                "socket_timeout": 30,
+                "socket_connect_timeout": 10,
+                "socket_keepalive": True,
+                "retry_on_timeout": True,
+                "health_check_interval": 30,
+            },
         },
     }
 }
